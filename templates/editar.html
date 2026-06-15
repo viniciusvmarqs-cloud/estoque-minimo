@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+
+{% block conteudo %}
+
+
+<h1>Editar Produto</h1>
+
+
+<form method="POST">
+
+
+<input 
+class="form-control"
+name="nome"
+value="{{produto.nome}}">
+
+
+<br>
+
+
+<input 
+class="form-control"
+name="quantidade"
+value="{{produto.quantidade}}">
+
+
+<br>
+
+
+<input 
+class="form-control"
+name="minimo"
+value="{{produto.minimo}}">
+
+
+<br>
+
+
+<input 
+class="form-control"
+name="preco"
+value="{{produto.preco}}">
+
+
+<br>
+
+
+<button class="btn btn-primary">
+Salvar
+</button>
+
+
+</form>
+
+
+{% endblock %}

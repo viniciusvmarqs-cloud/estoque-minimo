@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+
+{% block conteudo %}
+
+
+<div class="card p-4">
+
+
+<h2>
+Movimentar estoque
+</h2>
+
+
+<h3>
+{{produto.nome}}
+</h3>
+
+
+
+<form method="POST">
+
+
+<select 
+class="form-control mb-3"
+name="tipo">
+
+
+<option value="entrada">
+Entrada
+</option>
+
+
+<option value="saida">
+Saída
+</option>
+
+
+</select>
+
+
+
+<input
+class="form-control mb-3"
+name="quantidade"
+placeholder="Quantidade">
+
+
+
+<button class="btn btn-success">
+
+Salvar
+
+</button>
+
+
+
+</form>
+
+
+</div>
+
+
+{% endblock %}

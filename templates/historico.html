@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+
+{% block conteudo %}
+
+
+<h1>
+Histórico
+</h1>
+
+
+<table class="table">
+
+
+<tr>
+
+<th>Tipo</th>
+<th>Quantidade</th>
+<th>Data</th>
+
+</tr>
+
+
+
+{% for m in movimentos %}
+
+
+<tr>
+
+<td>
+{{m.tipo}}
+</td>
+
+
+<td>
+{{m.quantidade}}
+</td>
+
+
+<td>
+{{m.data}}
+</td>
+
+
+</tr>
+
+
+{% endfor %}
+
+
+</table>
+
+
+{% endblock %}

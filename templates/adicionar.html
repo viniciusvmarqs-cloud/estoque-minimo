@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+
+{% block conteudo %}
+
+
+<h1>
+Adicionar produto
+</h1>
+
+
+<form method="POST">
+
+
+<input 
+class="form-control mb-2"
+name="nome"
+placeholder="Produto">
+
+
+
+<input 
+class="form-control mb-2"
+name="quantidade"
+placeholder="Quantidade">
+
+
+
+<input 
+class="form-control mb-2"
+name="minimo"
+placeholder="Estoque mínimo">
+
+
+
+<input 
+class="form-control mb-2"
+name="preco"
+placeholder="Preço">
+
+
+
+<button class="btn btn-primary">
+
+Salvar
+
+</button>
+
+
+</form>
+
+
+{% endblock %}

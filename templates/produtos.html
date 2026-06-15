@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+
+{% block conteudo %}
+
+
+<h1 class="mb-4">
+📦 Produtos
+</h1>
+
+
+<input 
+class="form-control mb-3"
+id="busca"
+placeholder="Buscar produto..."
+>
+
+
+<table class="table table-striped">
+
+
+<thead>
+
+<tr>
+
+<th>Produto</th>
+
+<th>Quantidade</th>
+
+<th>Mínimo</th>
+
+<th>Preço</th>
+
+<th>Status</th>
+
+<th>Ações</th>
+
+
+</tr>
+
+</thead>
+
+
+
+<tbody>
+
+
+{% for p in produtos %}
+
+
+<tr>
+
+
+<td>
+{{p.nome}}
+</td>
+
+
+
+<td>
+{{p.quantidade}}
+</td>
+
+
+
+<td>
+{{p.minimo}}
+</td>
+
+
+
+<td>
+R$ {{p.preco}}
+</td>
+
+
+
+<td>
+
+
+{% if p.quantidade <= p.minimo %}
+
+
+<span class="badge bg-danger">
+
+Comprar
+
+</span>
+
+
+{% else %}
+
+
+<span class="badge bg-success">
+
+OK
+
+</span>
+
+
+{% endif %}
+
+
+</td>
+
+
+
+
+<td>
+
+
+<a 
+href="/editar/{{p.id}}"
+
+class="btn btn-warning btn-sm">
+
+Editar
+
+</a>
+
+
+
+<a 
+href="/excluir/{{p.id}}"
+
+class="btn btn-danger btn-sm">
+
+Excluir
+
+</a>
+
+
+
+<a 
+href="/movimento_rapido/{{p.id}}/entrada"
+
+class="btn btn-success btn-sm">
+
++1
+
+</a>
+
+
+
+<a 
+href="/movimento_rapido/{{p.id}}/saida"
+
+class="btn btn-danger btn-sm">
+
+-1
+
+</a>
+
+
+
+</td>
+
+
+
+</tr>
+
+
+
+{% endfor %}
+
+
+
+</tbody>
+
+
+</table>
+
+
+
+
+<script>
+
+
+document
+.getElementById("busca")
+.addEventListener("keyup", function(){
+
+
+let valor = this.value.toLowerCase();
+
+
+
+document
+.querySelectorAll("tbody tr")
+.forEach(linha => {
+
+
+linha.style.display =
+
+linha.innerText
+.toLowerCase()
+.includes(valor)
+
+?
+
+""
+
+:
+
+"none";
+
+
+
+});
+
+
+});
+
+
+</script>
+
+
+
+{% endblock %}
