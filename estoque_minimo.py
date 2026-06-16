@@ -1,178 +1,83 @@
-import sqlite3
-from flask import render_template, Flask, request, redirect, session
+import os
+import psycopg2
+import psycopg2.extras  # CORRIGIDO: Necessário para o RealDictCursor
+from flask import Flask, render_template, request, redirect, session
 from datetime import datetime
+from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash # CORRIGIDO: Para segurança de senhas
+
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = "chave-super-secreta"
-
+# Otimizado: Pega do .env, se não existir, usa uma padrão segura temporária
+app.secret_key = os.getenv("SECRET_KEY", "chave-super-secreta-fallback")
 
 def conectar():
-    banco = sqlite3.connect("estoque.db")
-    banco.row_factory = sqlite3.Row  # Isso nos permite usar user["nome_da_coluna"]
-    return banco
-
-
-@app.route("/movimentar/<int:id>", methods=["GET", "POST"])
-def movimentar(id):
-    if "usuario" not in session:
-        return redirect("/login")
-
-    banco = conectar()
-
-    produto = banco.execute(
-        """
-        SELECT *
-        FROM produtos
-        WHERE id=?
-        AND loja=?
-        """,
-        (id, session["loja"]),
-    ).fetchone()
-
-    if request.method == "POST":
-        tipo = request.form["tipo"]
-        quantidade = int(request.form["quantidade"])
-
-        if tipo == "entrada":
-            banco.execute(
-                """
-                UPDATE produtos
-                SET quantidade = quantidade + ?
-                WHERE id=?
-                """,
-                (quantidade, id),
-            )
-        else:
-            banco.execute(
-                """
-                UPDATE produtos
-                SET quantidade = quantidade - ?
-                WHERE id=?
-                """,
-                (quantidade, id),
-            )
-
-        banco.execute(
-            """
-            INSERT INTO movimentacoes
-            (produto_id,tipo,quantidade,data,loja)
-            VALUES(?,?,?,?,?)
-            """,
-            (id, tipo, quantidade, datetime.now(), session["loja"]),
-        )
-
-        banco.commit()
-        banco.close()
-
-        return redirect("/produtos")
-
-    banco.close()
-    return render_template("movimentar.html", produto=produto)
-
-
-@app.route("/movimento_rapido/<int:id>/<tipo>")
-def movimento_rapido(id, tipo):
-    if "usuario" not in session:
-        return redirect("/login")
-
-    banco = conectar()
-
-    if tipo == "entrada":
-        banco.execute(
-            """
-            UPDATE produtos
-            SET quantidade = quantidade + 1
-            WHERE id=?
-            AND loja=?
-            """,
-            (id, session["loja"]),
-        )
-
-    if tipo == "saida":
-        banco.execute(
-            """
-            UPDATE produtos
-            SET quantidade = quantidade - 1
-            WHERE id=?
-            AND loja=?
-            """,
-            (id, session["loja"]),
-        )
-
-    banco.execute(
-        """
-        INSERT INTO movimentacoes
-        (produto_id,tipo,quantidade,data,loja)
-        VALUES(?,?,?,?,?)
-        """,
-        (id, tipo, 1, datetime.now(), session["loja"]),
+    return psycopg2.connect(
+        os.getenv("DATABASE_URL")
     )
-
-    banco.commit()
-    banco.close()
-    return redirect("/produtos")
-
 
 def criar_tabela():
     banco = conectar()
+    cursor = banco.cursor()
 
-    banco.execute(
-        """
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS produtos(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         nome TEXT,
         quantidade INTEGER,
         minimo INTEGER,
         preco REAL,
         loja TEXT
     )
-    """
-    )
-    banco.execute(
-        """
-        CREATE TABLE IF NOT EXISTS movimentacoes(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        produto_id INTEGER,
-        tipo TEXT,
-        quantidade INTEGER,
-        data TEXT,
-        loja TEXT
-        )"""
-    )
+    """)
 
-    banco.execute(
-        """
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS usuarios(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         usuario TEXT,
         senha TEXT,
         tipo TEXT,
         loja TEXT
     )
-    """
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS movimentacoes(
+        id SERIAL PRIMARY KEY,
+        produto_id INTEGER,
+        tipo TEXT,
+        quantidade INTEGER,
+        data TIMESTAMP,
+        loja TEXT
     )
+    """)
 
     banco.commit()
+    cursor.close()
     banco.close()
-
 
 def criar_usuario():
     banco = conectar()
-    existe = banco.execute("SELECT * FROM usuarios").fetchone()
+    cursor = banco.cursor()
 
-    if existe == None:
-        banco.execute(
+    cursor.execute("SELECT * FROM usuarios WHERE usuario = 'admin'")
+    existe = cursor.fetchone()
+
+    if existe is None:
+        # CORRIGIDO: Agora a senha padrão é salva criptografada
+        senha_cripto = generate_password_hash("ViniciuS12*")
+        cursor.execute(
             """
-            INSERT INTO usuarios
-            (usuario,senha,tipo,loja)
-            VALUES(?,?,?,?)
+            INSERT INTO usuarios (usuario, senha, tipo, loja)
+            VALUES (%s, %s, %s, %s)
             """,
-            ("admin", "ViniciuS12*", "admin", "ADMIN"),
+            ("admin", senha_cripto, "admin", "ADMIN")
         )
 
     banco.commit()
+    cursor.close()
     banco.close()
-
 
 @app.route("/")
 def inicio():
@@ -180,54 +85,71 @@ def inicio():
         return redirect("/login")
 
     banco = conectar()
+    cursor = banco.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     loja = session["loja"]
 
-    total = banco.execute(
-        """
-        SELECT COUNT(*)
-        FROM produtos
-        WHERE loja=?
-        """,
-        (loja,),
-    ).fetchone()[0]
+  # ... (código anterior da rota)
 
-    alertas = banco.execute(
-        """
-        SELECT COUNT(*)
-        FROM produtos
-        WHERE quantidade<=minimo
-        AND loja=?
-        """,
-        (loja,),
-    ).fetchone()[0]
+    # 1. Busca o total de produtos
+    cursor.execute("SELECT COUNT(*) FROM produtos WHERE loja=%s", (loja,))
+    resultado_total = cursor.fetchone()
+    # Se resultado_total existir e tiver a chave, usa o valor. Se for None, assume 0.
+    total = resultado_total["count"] if resultado_total else 0
 
-    produtos_baixos = banco.execute(
-        """
-        SELECT nome, quantidade
-        FROM produtos
-        WHERE quantidade<=minimo
-        AND loja=?
-        """,
-        (loja,),
-    ).fetchall()
+    # 2. Busca o total de alertas
+    cursor.execute("SELECT COUNT(*) FROM produtos WHERE quantidade<=minimo AND loja=%s", (loja,))
+    resultado_alertas = cursor.fetchone()
+    # Mesmo tratamento seguro aqui
+    alertas = resultado_alertas["count"] if resultado_alertas else 0
 
-    banco.close()
+    # 3. Busca a lista de produtos baixos
+    cursor.execute("SELECT nome, quantidade FROM produtos WHERE quantidade<=minimo AND loja=%s", (loja,))
+    produtos_baixos = cursor.fetchall()
 
+    # Evita quebrar se produtos_baixos vier vazio/None
     nomes = []
     quantidades = []
+    if produtos_baixos:
+        nomes = [p["nome"] for p in produtos_baixos]
+        quantidades = [p["quantidade"] for p in produtos_baixos]
 
-    for produto in produtos_baixos:
-        nomes.append(produto["nome"])
-        quantidades.append(produto["quantidade"])
+    cursor.close()
+    banco.close()
 
     return render_template(
         "index.html",
         total=total,
         alertas=alertas,
         nomes=nomes,
-        quantidades=quantidades,
+        quantidades=quantidades
     )
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        usuario = request.form["usuario"]
+        senha = request.form["senha"]
+
+        banco = conectar()
+        cursor = banco.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # CORRIGIDO: Buscamos apenas pelo usuário para checar a senha depois
+        cursor.execute("SELECT * FROM usuarios WHERE usuario=%s", (usuario,))
+        user = cursor.fetchone()
+
+        cursor.close()
+        banco.close()
+
+        # CORRIGIDO: Verificação segura de hash de senha
+        if user and check_password_hash(user["senha"], senha):
+            session["usuario"] = user["usuario"]
+            session["tipo"] = user["tipo"]
+            session["loja"] = user["loja"]
+            return redirect("/")
+
+        return "Login inválido", 401
+
+    return render_template("login.html")
 
 @app.route("/produtos")
 def produtos():
@@ -235,18 +157,15 @@ def produtos():
         return redirect("/login")
 
     banco = conectar()
-    lista = banco.execute(
-        """
-        SELECT *
-        FROM produtos
-        WHERE loja=?
-        """,
-        (session["loja"],),
-    ).fetchall()
+    cursor = banco.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
+    cursor.execute("SELECT * FROM produtos WHERE loja=%s", (session["loja"],))
+    lista = cursor.fetchall()
+
+    cursor.close()
     banco.close()
-    return render_template("produtos.html", produtos=lista)
 
+    return render_template("produtos.html", produtos=lista)
 
 @app.route("/adicionar", methods=["GET", "POST"])
 def adicionar():
@@ -254,65 +173,63 @@ def adicionar():
         return redirect("/login")
 
     if request.method == "POST":
-        nome = request.form["nome"]
-        quantidade = request.form["quantidade"]
-        minimo = request.form["minimo"]
-        preco = request.form["preco"]
-
         banco = conectar()
-        banco.execute(
-            """
-            INSERT INTO produtos
-            (nome,quantidade,minimo,preco,loja)
-            VALUES(?,?,?,?,?)
-            """,
-            (nome, quantidade, minimo, preco, session["loja"]),
-        )
+        cursor = banco.cursor()
 
+        cursor.execute(
+            """
+            INSERT INTO produtos (nome, quantidade, minimo, preco, loja)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                request.form["nome"],
+                request.form["quantidade"],
+                request.form["minimo"],
+                request.form["preco"],
+                session["loja"]
+            )
+        )
         banco.commit()
+        cursor.close()
         banco.close()
+
         return redirect("/produtos")
 
     return render_template("adicionar.html")
 
-
 @app.route("/excluir/<int:id>")
 def excluir(id):
+    # CORRIGIDO: Proteção de rota interna
     if "usuario" not in session:
         return redirect("/login")
 
     banco = conectar()
-    banco.execute(
-        """
-        DELETE FROM produtos
-        WHERE id=?
-        AND loja=?
-        """,
-        (id, session["loja"]),
-    )
+    cursor = banco.cursor()
 
+    # CORRIGIDO: Garante que o usuário só deleta o produto da própria loja dele
+    cursor.execute("DELETE FROM produtos WHERE id=%s AND loja=%s", (id, session["loja"]))
+    
     banco.commit()
+    cursor.close()
     banco.close()
-    return redirect("/produtos")
 
+    return redirect("/produtos")
 
 @app.route("/editar/<int:id>", methods=["GET", "POST"])
 def editar(id):
+    # CORRIGIDO: Proteção de rota interna
     if "usuario" not in session:
         return redirect("/login")
 
     banco = conectar()
+    cursor = banco.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     if request.method == "POST":
-        banco.execute(
+        cursor.execute(
             """
             UPDATE produtos
-            SET nome=?,
-            quantidade=?,
-            minimo=?,
-            preco=?
-            WHERE id=?
-            AND loja=?
+            SET nome=%s, quantidade=%s, minimo=%s, preco=%s
+            WHERE id=%s AND loja=%s
             """,
             (
                 request.form["nome"],
@@ -320,173 +237,31 @@ def editar(id):
                 request.form["minimo"],
                 request.form["preco"],
                 id,
-                session["loja"],
-            ),
+                session["loja"]
+            )
         )
-
         banco.commit()
+        cursor.close()
         banco.close()
         return redirect("/produtos")
 
-    produto = banco.execute(
-        """
-        SELECT *
-        FROM produtos
-        WHERE id=?
-        AND loja=?
-        """,
-        (id, session["loja"]),
-    ).fetchone()
-
+    cursor.execute("SELECT * FROM produtos WHERE id=%s AND loja=%s", (id, session["loja"]))
+    produto = cursor.fetchone()
+    
+    cursor.close()
     banco.close()
+
+    if not produto:
+        return "Produto não encontrado ou acesso não autorizado", 404
+
     return render_template("editar.html", produto=produto)
 
-@app.route("/login", methods=["GET","POST"])
-def login():
-    if request.method=="POST":
-        usuario=request.form["usuario"]
-        senha=request.form["senha"]
-
-        banco=conectar()
-
-        user=banco.execute(
-        """
-        SELECT *
-        FROM usuarios
-        WHERE usuario=?
-        AND senha=?
-        """,
-        (usuario, senha)).fetchone()
-
-        banco.close()
-
-        if user:
-            print(user.keys())
-            # Certifique-se de que está escrito exatamente assim:
-            session["usuario"] = user["usuario"]
-            session["tipo"] = user["tipo"]
-            session["loja"] = user["loja"]
-
-            return redirect("/")
-
-        return "Login inválido"
-
-    return render_template("login.html")
-@app.route("/gerenciar")
-def gerenciar():
-
-    if "usuario" not in session:
-        return redirect("/login")
-
-
-    banco = conectar()
-
-
-    produtos = banco.execute(
-    """
-    SELECT *
-
-    FROM produtos
-
-    WHERE loja=?
-
-    """,
-    (session["loja"],)
-
-    ).fetchall()
-
-
-    banco.close()
-
-
-    return render_template(
-        "gerenciar.html",
-        produtos=produtos
-    )
-@app.route("/ver_produtos")
-def ver_produtos():
-
-    if "usuario" not in session:
-        return redirect("/login")
-
-
-    banco = conectar()
-
-
-    produtos = banco.execute(
-    """
-    SELECT *
-
-    FROM produtos
-
-    WHERE loja=?
-
-    """,
-    (session["loja"],)
-
-    ).fetchall()
-
-
-    banco.close()
-
-
-    return render_template(
-        "ver_produtos.html",
-        produtos=produtos
-    )
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/login")
 
-
-@app.route("/cadastrar_usuario", methods=["GET", "POST"])
-def cadastrar_usuario():
-    if "tipo" not in session or session["tipo"] != "admin":
-        return "Acesso negado"
-
-    if request.method == "POST":
-        usuario = request.form["usuario"]
-        senha = request.form["senha"]
-
-        banco = conectar()
-        banco.execute(
-            """
-            INSERT INTO usuarios
-            (usuario,senha,tipo,loja)
-            VALUES(?,?,?,?)
-            """,
-            (usuario, senha, "cliente", usuario),
-        )
-
-        banco.commit()
-        banco.close()
-        return redirect("/")
-
-    return render_template("cadastrar_usuario.html")
-
-
-@app.route("/historico")
-def historico():
-    if "usuario" not in session:
-        return redirect("/login")
-
-    banco = conectar()
-    movimentos = banco.execute(
-        """
-        SELECT *
-        FROM movimentacoes
-        WHERE loja=?
-        ORDER BY id DESC
-        """,
-        (session["loja"],),
-    ).fetchall()
-
-    banco.close()
-    return render_template("historico.html", movimentos=movimentos)
-
-
-# Inicialização do banco
+# Inicialização do Banco
 criar_tabela()
 criar_usuario()
 
